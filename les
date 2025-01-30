@@ -1,0 +1,268 @@
+import asyncio
+
+import aiogram
+import media
+import requests
+from aiogram import types, Bot, Dispatcher
+from aiogram.filters import Command
+from random import randint
+
+TOKEN = "7654721096:AAEgP6u-GAhSskVg_zuswc3FYXUFwS5TpTo"
+channel_name = ""
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+user_data = {}
+
+email = 'abduraufovsirojiddin@gmail.com'
+password = '3MvtcUzHwyKgyff3bqbaLFXPCPoolGHRIJDHvPPo'
+
+
+def login_and_token():
+    url = "hhtps://notify.eskiz.uz/api/auth/login"
+    payload = {'email': email,
+               'password': password}
+    files = []
+    headers = {}
+    response = requests.request("POST", url, headers=headers, data=payload, files=files)
+    if response.status_code == 200:
+        token = response.json()['data']['token']
+        return token
+
+
+def send_sms(token,phone,):
+    url = "hhtps://notify.eskiz.uz/api/message/sms/send"
+    payload = {'mobile_phone': phone,
+               'message': 'Bu Eskiz da test',
+               'from': '4546',
+               'callback_url': 'http://0000.uz/test.php'}
+    files = []
+    headers = {'Authorization':f'Bearer {token }'
+    }
+    response = requests.request("POST", url, headers=headers, data=payload, files=files)
+    if response.status_code != 200:
+        raise "SMS yuborishda xatolik"
+
+
+
+
+@dp.message()
+async def handle_text(message: types.Message):
+    user_id = message.from_user.id
+    if user_id not in user_data or message.text == '/start':
+        await start(message)
+    elif 'phone' not in user_data[user_id]:
+        await send_code(message)
+    elif 'status' not in user_data[user_id]:
+        await check_code(message)
+    elif 'location' not in user_data[user_id]:
+        await info_location(message)
+    elif 'kategoriyalar' in user_data[user_id]['holat']:
+        await show_menu(message)
+    elif 'tovarlar' in user_data[user_id]['holat']:
+        await check_menu(message)
+    elif 'tovar' in user_data[user_id]['holat']:
+        await check_items(message)
+
+
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    user_id = message.from_user.id
+    user_data[user_id] = {}
+    button = [
+        [types.KeyboardButton(text="Raqam jo'natish", request_contact=True)]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(keyboard=button, resize_keyboard=True)
+    await message.answer("Assalomu aleykum! \n Les Ailesga hush kelibsiz. telefon raqamingizni kiriting .",
+                         reply_markup=keyboard)
+    print(user_data)
+
+
+async def send_code(message: types.Message):
+    user_id = message.from_user.id
+    i = '+1234567890'
+    ok = True
+    if message.contact is not None:
+        phone_c = message.contact.phone_number
+        user_data[user_id]['phone'] = phone_c
+        ver_code = randint(100000, 999999)
+        user_data[user_id]['verification_code'] = ver_code
+        try:
+            try:
+                token = login_and_token(email , password)
+            except:
+                print("token bilan hatolik")
+            send_sms(token,phone_c)
+            await message.answer(f"Nomeringizga tasdiqlash kodi yuborildi \n Iltimos kodni kiriting: {ver_code}")
+        except Exception as ex:
+            await message.answer(f"ex")
+        await message.answer(f"Nomeringizga tasdiqlash kodi yuborildi \n Iltimos kodni kiriting: {ver_code}")
+    elif len(message.text) == 13 and message.text[0:4] == '+998':
+        for symbol in message.text:
+            if symbol not in i:
+                await message.answer('Hato nomer kiritildi')
+                ok = False
+                break
+    if ok:
+        phone = message.text
+        user_data[user_id]['phone'] = phone
+        ver_code = randint(100000, 999999)
+        user_data[user_id]['verification_code'] = ver_code
+
+
+    else:
+        await  message.answer('Hato nomer kiritildi')
+    print(user_data)
+
+
+async def check_code(message: types.Message):
+    user_id = message.from_user.id
+    code = message.text
+    verification_code = user_data[user_id]['verification_code']
+    if str(verification_code) == code:
+        user_data[user_id]['status'] = 'verified'
+        await message.answer('Nomeringizni tasdiqlandi')
+        await ask_location(message)
+    else:
+        await message.answer('Kod xato terildi. Yana urunib koring')
+        print(user_data)
+
+
+async def ask_location(message: types.Message):
+    user_id = message.from_user.id
+    if 'location' in user_data[user_id]:
+        del user_data[user_id]['location']
+    if 'holat' in user_data[user_id]:
+        del user_data[user_id]['holat']
+    button = [
+        [types.KeyboardButton(text="Lokatsiya  jo'natish", request_location=True)]
+    ]
+    keyboard = types.ReplyKeyboardMarkup(keyboard=button, resize_keyboard=True)
+    await message.answer("Lokatsiya jo'nating", reply_markup=keyboard)
+    print(user_data)
+
+
+async def info_location(message: types.Message):
+    user_id = message.from_user.id
+    if 'location' not in user_data[user_id]:
+        if message.location is not None:
+            latitude = message.location.latitude
+            longitude = message.location.longitude
+            location = {
+                'latitude': latitude,
+                'longitude': longitude
+            }
+        else:
+            location = message.text
+        user_data[user_id]['location'] = location
+        button = [
+            [types.KeyboardButton(text="Buyurtma berish")],
+            [types.KeyboardButton(text="Orqaga", )]
+        ]
+    keyboard = types.ReplyKeyboardMarkup(keyboard=button, resize_keyboard=True)
+    user_data[user_id]['holat'] = 'kategoriyalar'
+    await message.answer(f"Boshladikmi?", reply_markup=keyboard)
+    print(user_data)
+
+
+menu = {
+    'Burgerlar': {'Chesburger': 27000, 'chiliburger': 26000, 'Humburger': 25000},
+    'Tovuqlar': {'qnotlar': 30000, 'Oyoqchalar': 35000, 'Strips': 40000},
+    'ichimliklar': {'ICE tea': 17000, 'choy': 6000, 'Moxito': 17000},
+}
+
+
+async def show_menu(message: types.Message):
+    user_id = message.from_user.id
+    user_data[user_id]['holat'] = 'tovarlar'
+    if message.text == 'Buyurtma berish':
+        buttons = []
+        for category in menu:
+            button = [types.KeyboardButton(text=category)]
+            buttons.append(button)
+            button_back = [types.KeyboardButton(text='Orqaga')]
+        buttons.append(button_back)
+        keyboard = types.ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+        await message.answer(f"Nimadan boshlaymiz?", reply_markup=keyboard)
+    elif message.text == 'Orqaga':
+        await ask_location(message)
+        print(user_data)
+
+
+async def check_menu(message: types.Message):
+    user_id = message.from_user.id
+    category = message.text
+    user_data[user_id]['category'] = category
+    if category in menu:
+        await show_items(message)
+    elif category == 'Orqaga':
+        await info_location(message)
+
+
+async def show_items(message: types.Message):
+    user_id = message.from_user.id
+    buttons = []
+    category = user_data[user_id]['category']
+    for item in menu[category]:
+        button = [types.KeyboardButton(text=item)]
+        buttons.append(button)
+        keyboard = types.ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+    user_data[user_id]['holat'] = 'tovar'
+    await message.answer(f"Nimadan boshlaymiz?", reply_markup=keyboard)
+
+
+async def check_items(message: types.Message):
+    user_id = message.from_user.id
+    item = message.text
+    category = user_data[user_id]['category']
+    if item in menu[category]:
+        user_data[user_id]['item'] = item
+        price = menu[category][item]
+        buttons = [
+            [types.InlineKeyboardButton(text=f"-", callback_data=f"minus_{item}"),
+             types.InlineKeyboardButton(text=f"1", callback_data=f"count_{item}"),
+             types.InlineKeyboardButton(text=f"+", callback_data=f"plus_{item}"), ],
+            [types.InlineKeyboardButton(text=f"Savatga qo'shish", callback_data=f"add_{item}")]]
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+        await message.answer(f"Tovar:{item}\n"
+                             f"Narxi:{price}", reply_markup=keyboard)
+
+
+count = 1
+
+
+@dp.callback_query(lambda c: c.data.startswith(('plus', 'minus', 'add')))
+async def check_callback_data(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    command, item = callback.data.split('_')
+    global count
+    if command == 'plus':
+        count += 1
+    elif command == 'minus':
+        if count > 1:
+            command -= 1
+    elif command == 'add':
+        if 'basket' not in user_data[user_id]:
+            user_data[user_id]['basket'] = {item: count}
+        else:
+            user_data[user_id]
+        buttons = [
+            [types.InlineKeyboardButton(text=f"-", callback_data=f"minus_{item}"),
+             types.InlineKeyboardButton(text=f"{count}", callback_data=f"count_{item}"),
+             types.InlineKeyboardButton(text=f"+", callback_data=f"plus_{item}"),
+             types.InlineKeyboardButton(text=f"Savatga qo'shish", callback_data=f"add_{item}")]
+        ]
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=buttons)
+    category = user_data[user_id]['category']
+    price = menu[category][item]
+    price = price * count
+    await callback.message.edit.text(f"Tovar:{item}\n"
+                                     f"Narxi:{price}", reply_markup=keyboard)
+    print('Count:', count)
+
+
+async def main():
+    await dp.start_polling(bot)
+
+
+print('The bot is runnig...')
+asyncio.run(main())
